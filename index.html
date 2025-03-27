@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimized Job Routing with Mapbox</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 500px;
+        }
+
+        #schedule {
+            padding: 10px;
+            background: white;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Optimized Job Routing</h2>
+    <div id="map"></div>
+    <div id="schedule"></div>
+
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1Ijoic2VyaHV6IiwiYSI6ImNseXpvc3RlczJpbnIya3FscDU2aHc5d3EifQ.FHtPjde_lqensSHZxqthg';
+        //w
+
+        // Initialize map
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-73.9865, 40.7306], // Center on New York City
+            zoom: 12
+        });
+
+        // Job data
+        const jobs = [
+            { id: 1, location: [-73.985428, 40.748817], duration: 60, name: "Empire State Building" },
+            { id: 2, location: [-74.0060, 40.7128], duration: 120, name: "One World Trade Center" },
+            { id: 3, location: [-73.9776, 40.7527], duration: 90, name: "Grand Central Terminal" },
+            { id: 4, location: [-73.9865, 40.7306], duration: 60, name: "A" },
+        ];
+
+        // Function to display a simple route without the optimization API
+        function displaySimpleRoute() {
+            console.log("Using fallback method for route display");
+            document.getElementById('schedule').innerHTML =
+                '<p><strong>Note:</strong> Using simplified route visualization because the Optimization API is unavailable.</p>' +
+                '<p>The Mapbox Optimization API requires a paid account. Using a basic visualization instead.</p>';
+
+            // Create a simple ordered path through all points
+            const routeCoordinates = jobs.map(job => job.location);
+
+            // Add source and layer for straight-line connections
+            map.addSource('simple-route', {
+                'type': 'geojson',
+                'data': {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': routeCoordinates
+                    }
+                }
+            });
+
+            map.addLayer({
+                'id': 'simple-route',
+                'type': 'line',
+                'source': 'simple-route',
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#ff9900',
+                    'line-width': 4,
+                    'line-opacity': 0.8,
+                    'line-dasharray': [2, 1]
+                }
+            });
+
+            // Create a simple schedule
+            let startTime = new Date();
+            startTime.setHours(9, 0, 0, 0);
+
+            let schedule = '<h3>Simple Schedule (Not Optimized)</h3><table border="1" style="border-collapse: collapse; width: 100%;">';
+            schedule += '<tr><th>Time</th><th>Location</th><th>Duration</th></tr>';
+
+            let currentTime = new Date(startTime);
+
+            jobs.forEach((job, index) => {
+                // Format time
+                const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                // Add to schedule
+                schedule += `<tr>
+                    <td>${timeStr}</td>
+                    <td>${job.name}</td>
+                    <td>${job.duration} min</td>
+                </tr>`;
+
+                // Estimate travel time (15 minutes between locations)
+                if (index < jobs.length - 1) {
+                    const estimatedTravelTime = 15; // minutes
+                    currentTime = new Date(currentTime.getTime() + (job.duration + estimatedTravelTime) * 60000);
+                }
+            });
+
+            schedule += '</table>';
+            schedule += '<p><em>Note: Travel times are estimated at 15 minutes between locations since the optimization API is unavailable.</em></p>';
+
+            document.getElementById('schedule').innerHTML += schedule;
+        }
+
+        // Wait for the map to fully load before processing
+        map.on('load', () => {
+            console.log("Map loaded, adding markers...");
+
+            // Create bounds object to fit all markers
+            const bounds = new mapboxgl.LngLatBounds();
+
+            // Add markers for each job
+            jobs.forEach(job => {
+                // Extend bounds with this location
+                bounds.extend(job.location);
+
+                new mapboxgl.Marker()
+                    .setLngLat(job.location)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h3>${job.name}</h3><p>Duration: ${job.duration} min</p>`))
+                    .addTo(map);
+            });
+
+            // Fit map to show all markers with padding
+            map.fitBounds(bounds, { padding: 70 });
+
+            // Format coordinates for API call
+            const coordinates = jobs.map(job => job.location.join(',')).join(';');
+
+            try {
+                // Try to use the Directions API instead of Optimization API for more reliable results
+                // Directions API has more generous free tier limits
+                console.log("Trying Mapbox Directions API...");
+
+                displayFullRoute().catch(err => {
+                    console.error("Error fetching full route:", err);
+                    displaySimpleRoute();
+                });
+            } catch (error) {
+                console.error("Error setting up API calls:", error);
+                displaySimpleRoute();
+            }
+        });
+
+        async function displayFullRoute() {
+            const routeCoords = [];
+            let totalTravelTime = 0;
+
+            for (let i = 0; i < jobs.length - 1; i++) {
+                const start = jobs[i].location.join(',');
+                const end = jobs[i + 1].location.join(',');
+                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start};${end}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+                const data = await fetch(url).then(r => {
+                    if (!r.ok) throw new Error(`API error: ${r.status}`);
+                    return r.json();
+                });
+                if (data.code !== 'Ok') throw new Error('No valid route found');
+                routeCoords.push(...data.routes[0].geometry.coordinates);
+                totalTravelTime += (data.routes[0].duration / 60); // minutes
+            }
+
+            map.addSource('complete-route', {
+                'type': 'geojson',
+                'data': {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': routeCoords
+                    }
+                }
+            });
+
+            map.addLayer({
+                'id': 'complete-route',
+                'type': 'line',
+                'source': 'complete-route',
+                'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                'paint': { 'line-color': '#3887be', 'line-width': 5, 'line-opacity': 0.8 }
+            });
+
+            createScheduleFromDirections(jobs, totalTravelTime);
+        }
+
+        function createScheduleFromDirections(orderedJobs, travelTime) {
+            let startTime = new Date();
+            startTime.setHours(9, 0, 0, 0);
+            let schedule = '<h3>Job Schedule</h3><table border="1" style="border-collapse: collapse; width: 100%;">';
+            schedule += '<tr><th>Time</th><th>Location</th><th>Duration</th></tr>';
+            let currentTime = new Date(startTime);
+
+            orderedJobs.forEach((job) => {
+                const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                schedule += `<tr><td>${timeStr}</td><td>${job.name}</td><td>${job.duration} min</td></tr>`;
+                currentTime = new Date(currentTime.getTime() + (job.duration * 60000));
+            });
+            schedule += '</table>';
+            schedule += `<p><em>Total estimated travel: ${Math.round(travelTime)} min</em></p>`;
+            document.getElementById('schedule').innerHTML = schedule;
+        }
+    </script>
+
+</body>
+
+</html>
