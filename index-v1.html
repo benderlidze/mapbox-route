@@ -167,12 +167,9 @@
             const coordinates = jobs.map(job => job.location.join(',')).join(';');
 
             try {
-                // Try to use the Directions API instead of Optimization API for more reliable results
-                // Directions API has more generous free tier limits
-                console.log("Trying Mapbox Directions API...");
-
-                displayFullRoute().catch(err => {
-                    console.error("Error fetching full route:", err);
+                console.log("Trying Mapbox Optimization API...");
+                displayOptimizedRoute().catch(err => {
+                    console.error("Error fetching optimized route:", err);
                     displaySimpleRoute();
                 });
             } catch (error) {
@@ -221,6 +218,49 @@
             createScheduleFromDirections(jobs, totalTravelTime);
         }
 
+        async function displayOptimizedRoute() {
+            const coordinates = jobs.map(job => job.location.join(',')).join(';');
+            const url = `https://api.mapbox.com/optimized-trips/v1/mapbox/driving/${coordinates}?geometries=geojson&source=first&destination=last&access_token=${mapboxgl.accessToken}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.code !== 'Ok') {
+                    throw new Error('Optimization API error');
+                }
+
+                const optimizedRoute = data.trips[0].geometry.coordinates;
+                const waypoints = data.waypoints;
+
+                map.addSource('optimized-route', {
+                    'type': 'geojson',
+                    'data': {
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': {
+                            'type': 'LineString',
+                            'coordinates': optimizedRoute
+                        }
+                    }
+                });
+
+                map.addLayer({
+                    'id': 'optimized-route',
+                    'type': 'line',
+                    'source': 'optimized-route',
+                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                    'paint': { 'line-color': '#34a853', 'line-width': 5, 'line-opacity': 0.8 }
+                });
+
+                const orderedJobs = waypoints.map(wp => jobs[wp.waypoint_index]);
+                createScheduleFromDirections(orderedJobs, data.trips[0].duration / 60); // duration in minutes
+            } catch (error) {
+                console.error('Error fetching optimized route:', error);
+                displaySimpleRoute();
+            }
+        }
+
         function createScheduleFromDirections(orderedJobs, travelTime) {
             let startTime = new Date();
             startTime.setHours(9, 0, 0, 0);
@@ -257,6 +297,116 @@
                 throw error;
             }
         }
+
+        async function displayDirectionsApiRoute() {
+            const routeCoords = [];
+            let totalTravelTime = 0;
+
+            for (let i = 0; i < jobs.length - 1; i++) {
+                const start = jobs[i].location.join(',');
+                const end = jobs[i + 1].location.join(',');
+                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start};${end}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+                const data = await fetch(url).then(r => {
+                    if (!r.ok) throw new Error(`API error: ${r.status}`);
+                    return r.json();
+                });
+                if (data.code !== 'Ok') throw new Error('No valid route found');
+                routeCoords.push(...data.routes[0].geometry.coordinates);
+                totalTravelTime += (data.routes[0].duration / 60); // minutes
+            }
+
+            map.addSource('directions-api-route', {
+                'type': 'geojson',
+                'data': {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': routeCoords
+                    }
+                }
+            });
+
+            map.addLayer({
+                'id': 'directions-api-route',
+                'type': 'line',
+                'source': 'directions-api-route',
+                'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                'paint': { 'line-color': '#3887be', 'line-width': 5, 'line-opacity': 0.8 }
+            });
+
+            createScheduleFromDirections(jobs, totalTravelTime, 'Directions API');
+        }
+
+        async function displayOptimizedApiRoute() {
+            const coordinates = jobs.map(job => job.location.join(',')).join(';');
+            const url = `https://api.mapbox.com/optimized-trips/v1/mapbox/driving/${coordinates}?geometries=geojson&source=first&destination=last&access_token=${mapboxgl.accessToken}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.code !== 'Ok') {
+                    throw new Error('Optimization API error');
+                }
+
+                const optimizedRoute = data.trips[0].geometry.coordinates;
+                const waypoints = data.waypoints;
+
+                map.addSource('optimized-api-route', {
+                    'type': 'geojson',
+                    'data': {
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': {
+                            'type': 'LineString',
+                            'coordinates': optimizedRoute
+                        }
+                    }
+                });
+
+                map.addLayer({
+                    'id': 'optimized-api-route',
+                    'type': 'line',
+                    'source': 'optimized-api-route',
+                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                    'paint': { 'line-color': '#34a853', 'line-width': 5, 'line-opacity': 0.8 }
+                });
+
+                const orderedJobs = waypoints.map(wp => jobs[wp.waypoint_index]);
+                createScheduleFromDirections(orderedJobs, data.trips[0].duration / 60, 'Optimized API');
+            } catch (error) {
+                console.error('Error fetching optimized route:', error);
+                displaySimpleRoute();
+            }
+        }
+
+        function createScheduleFromDirections(orderedJobs, travelTime, apiType) {
+            let startTime = new Date();
+            startTime.setHours(9, 0, 0, 0);
+            let schedule = `<h3>${apiType} Job Schedule</h3><table border="1" style="border-collapse: collapse; width: 100%;">`;
+            schedule += '<tr><th>Time</th><th>Location</th><th>Duration</th></tr>';
+            let currentTime = new Date(startTime);
+
+            orderedJobs.forEach((job) => {
+                const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                schedule += `<tr><td>${timeStr}</td><td>${job.name}</td><td>${job.duration} min</td></tr>`;
+                currentTime = new Date(currentTime.getTime() + (job.duration * 60000));
+            });
+            schedule += '</table>';
+            schedule += `<p><em>Total estimated travel: ${Math.round(travelTime)} min</em></p>`;
+            document.getElementById('schedule').innerHTML += schedule;
+        }
+
+        map.on('load', () => {
+            console.log("Map loaded, adding markers...");
+
+            // ...existing code for adding markers...
+
+            // Display both routes
+            displayDirectionsApiRoute().catch(err => console.error("Error with Directions API:", err));
+            displayOptimizedApiRoute().catch(err => console.error("Error with Optimized API:", err));
+        });
 
     </script>
 
