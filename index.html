@@ -32,7 +32,8 @@
     <div id="schedule"></div>
 
     <script>
-        mapboxgl.accessToken = 'pk.eyJ1Ijoic2VyaHV6IiwiYSI6ImNseXpvc3RlczJpbnIya3FscDU2aHc5d3EifQ.FHtPjde_lqensSHZxqthg';
+        mapboxgl.accessToken = 'pk.eyJ1IjoiamFrb2J6aGFvIiwiYSI6ImNpcms2YWsyMzAwMmtmbG5icTFxZ3ZkdncifQ.P9MBej1xacybKcDN_jehvw';
+
         //w
 
         // Initialize map
@@ -43,13 +44,32 @@
             zoom: 12
         });
 
+        const jsobList = {
+            "North Orlando": [{ "id": "N-A", "address": "1396 Chessington Cir, Lake Mary, FL 32746", "location": [-81.371487, 28.785794] }, { "id": "N-B", "address": "782 Haddonstone Cir, Lake Mary, FL 32746", "location": [-81.365937, 28.774137] }, { "id": "N-C", "address": "224 E Wilbur Ave, Lake Mary, FL 32746", "location": [-81.317774, 28.760163] }, { "id": "N-D", "address": "380 Cypress Knee Ln, Lake Mary, FL 32746", "location": [-81.366028, 28.730555] }, { "id": "N-E", "address": "1565 Katie Cove, Sanford, FL 32771", "location": [-81.36633, 28.79736] }, { "id": "N-F", "address": "3162 Winding Pine Trail, Longwood, FL 327793", "location": [-81.389977, 28.750263] }, { "id": "N-G", "address": "2592 Grassy Point Dr, Lake Mary, FL 32746", "location": [-81.356853, 28.737959] }],
+            "South Orlando": [{ "id": "S-A", "address": "8655 Shady Glen Dr, Orlando, FL 32819", "location": [-81.504632, 28.47359] }, { "id": "S-B", "address": "6142 Hardrock Cir, Orlando, FL 32819", "location": [-81.506906, 28.473979] }, { "id": "S-C", "address": "222 W 3rd Ave, Windermere, FL 34786", "location": [-81.53752, 28.49736] }, { "id": "S-D", "address": "4237 Winderlakes Dr, Orlando, FL 32835", "location": [-81.491156, 28.499171] }, { "id": "S-E", "address": "290 Holden Ave, Orlando, FL 32839", "location": [-81.378921, 28.490487] }, { "id": "S-F", "address": "5951 Crystal View Dr, Orlando, FL 32819", "location": [-81.476957, 28.477769] }, { "id": "S-G", "address": "6825 Sugarbush Dr, Orlando, FL 32819", "location": [-81.495337, 28.462008] }, { "id": "S-H", "address": "5700 Clearview Dr, Orlando, FL 32819", "location": [-81.477972, 28.48152] }],
+            "East Orlando": [{ "id": "E-A", "address": "4731 Riverton Dr, Orlando, FL 32817", "location": [-81.218163, 28.609589] }, { "id": "E-B", "address": "3851 Kingston Oaks Cove, Oviedo, FL 32765", "location": [-81.210954, 28.614926] }, { "id": "E-C", "address": "4813 Eaglesham Dr, Orlando, FL 32826", "location": [-81.185445, 28.608851] }, { "id": "E-D", "address": "2174 Martingale Pl, Oviedo, FL 32765", "location": [-81.238465, 28.614559] }, { "id": "E-E", "address": "10205 Chesham Dr, Orlando, FL 32817", "location": [-81.240469, 28.611417] }, { "id": "E-F", "address": "10314 Taraby Ct, Orlando, FL 32817", "location": [-81.23884, 28.605833] }, { "id": "E-G", "address": "10514 Wyndcliff Dr, Orlando, FL 32817", "location": [-81.236279, 28.602519] }, { "id": "E-H", "address": "2820 Rivers End Rd, Orlando, FL 32817", "location": [-81.225869, 28.587646] }, { "id": "E-I", "address": "11621 Shilpa Ct, Orlando, FL 32817", "location": [-81.210579, 28.584705] }, { "id": "E-J", "address": "10428 Cresto Delsol Cir, Orlando, FL 32817", "location": [-81.242285, 28.600109] }, { "id": "E-K", "address": "5616 Bear Stone Run, Oviedo, FL 32765", "location": [-81.23249, 28.631037] }]
+        }
+
+        // Object.keys(mainJobs).forEach((key) => {
+        //     mainJobs[key].forEach((job) => {
+        //         geocodeAddress(job.address).then((location) => {
+        //             console.log(`Location for ${job.id}:`, location);
+        //             //add as location
+        //             mainJobs[key].find((x) => x.id === job.id).location = location;
+        //         }).catch((error) => {
+        //             console.error(`Error geocoding ${job.id}:`, error);
+        //         });
+        //     });
+        // });
+
+
+
         // Job data
-        const jobs = [
-            { id: 1, location: [-73.985428, 40.748817], duration: 60, name: "Empire State Building" },
-            { id: 2, location: [-74.0060, 40.7128], duration: 120, name: "One World Trade Center" },
-            { id: 3, location: [-73.9776, 40.7527], duration: 90, name: "Grand Central Terminal" },
-            { id: 4, location: [-73.9865, 40.7306], duration: 60, name: "A" },
-        ];
+        const jobs = jsobList["North Orlando"].map((job, index) => ({
+            name: job.id,
+            location: job.location,
+            duration: Math.floor(Math.random() * 30) + 30 // Random duration between 30-60 minutes
+        }));
 
         // Function to display a simple route without the optimization API
         function displaySimpleRoute() {
@@ -218,6 +238,27 @@
             schedule += `<p><em>Total estimated travel: ${Math.round(travelTime)} min</em></p>`;
             document.getElementById('schedule').innerHTML = schedule;
         }
+
+
+        async function geocodeAddress(address) {
+            const geocodingUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${mapboxgl.accessToken}`;
+
+            try {
+                const response = await fetch(geocodingUrl);
+                const data = await response.json();
+
+                if (data.features && data.features.length > 0) {
+                    // Return first matching location's coordinates
+                    return data.features[0].center;
+                } else {
+                    throw new Error(`Could not geocode address: ${address}`);
+                }
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                throw error;
+            }
+        }
+
     </script>
 
 </body>
